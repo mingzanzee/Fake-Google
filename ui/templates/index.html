@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Engine</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="search-box">
+            <h1>🔍 Primitive Search Engine</h1>
+            <form id="searchForm">
+                <input type="text" id="queryInput" placeholder="Enter your search query..." autofocus>
+                <button type="submit">Search</button>
+            </form>
+            <div class="options">
+                <label>Results: 
+                    <select id="kSelect">
+                        <option value="5">5</option>
+                        <option value="10" selected>10</option>
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+        <div id="results"></div>
+    </div>
+    
+    <script>
+        const searchForm = document.getElementById('searchForm');
+        const queryInput = document.getElementById('queryInput');
+        const resultsDiv = document.getElementById('results');
+        const kSelect = document.getElementById('kSelect');
+        
+        searchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = queryInput.value.trim();
+            if (!query) return;
+            
+            const k = kSelect.value;
+            await performSearch(query, k);
+        });
+        
+        async function performSearch(query, k) {
+            resultsDiv.innerHTML = '<div class="loading">Searching...</div>';
+            
+            try {
+                const url = `/search?q=${encodeURIComponent(query)}&k=${k}`;
+                console.log(`🔍 Fetching: ${url}`);
+                
+                // triggers search path in do_GET in server.py
+                const response = await fetch(url);
+                
+                // Log response status
+                console.log(`📊 Response status: ${response.status} ${response.statusText}`);
+                
+                // Check if response is OK
+                if (!response.ok) {
+                    print("reponse not ok")
+                    let errorMsg = `Server error: ${response.status} ${response.statusText}`;
+                    
+                    // Try to get more info from response
+                    try {
+                        const contentType = response.headers.get('content-type');
+                        if (contentType && contentType.includes('application/json')) {
+                            const errorData = await response.json();
+                            if (errorData.error) {
+                                errorMsg = errorData.error;
+                            }
+                        } else {
+                            const text = await response.text();
+                            // Show first 200 chars of error
+                            errorMsg = `Server returned: ${text.substring(0, 200)}...`;
+                        }
+                    } catch (e) {
+                        // Fallback error
+                        errorMsg = `Error ${response.status}: ${response.statusText}`;
+                    }
+                    
+                    resultsDiv.innerHTML = `<div class="error">❌ ${errorMsg} ... response not ok on line 59 </div>`;
+                    return;
+                }
+                
+                // Parse JSON
+                let data;
+                try {
+                    data = await response.json();
+                    console.log(`✅ Received ${data.count || 0} results`);
+                } catch (e) {
+                    const text = await response.text();
+                    console.error(`❌ Failed to parse JSON: ${text.substring(0, 200)}`);
+                    resultsDiv.innerHTML = `<div class="error">❌ Server returned invalid JSON: ${text.substring(0, 100)}...</div>`;
+                    return;
+                }
+                
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="error">❌ ${data.error}. ...data error</div>`;
+                    return;
+                }
+                
+                displayResults(data);
+                
+            } catch (error) {
+                console.error('❌ Network error:', error);
+                resultsDiv.innerHTML = `<div class="error">❌ Network error: ${error.message}. Make sure the server is running at http://localhost:8000</div>`;
+            }
+        }
+        
+        function displayResults(data) {
+            if (data.count === 0) {
+                resultsDiv.innerHTML = '<div class="no-results">No results found for your query.</div>';
+                return;
+            }
+            
+            let html = `<div class="results-info">Found ${data.count} results for "<strong>${escapeHtml(data.query)}</strong>"</div>`;
+            html += '<ul class="results-list">';
+            
+            data.results.forEach((result, index) => {
+                const score = (result.score * 100).toFixed(2);
+                html += `
+                    <li class="result-item">
+                        <div class="result-rank">${index + 1}</div>
+                        <div class="result-content">
+                            <div class="result-title">${escapeHtml(result.title)}</div>
+                            <div class="result-snippet">${escapeHtml(result.snippet)}</div>
+                            <div class="result-score">Relevance: ${score}%</div>
+                        </div>
+                    </li>
+                `;
+            });
+            
+            html += '</ul>';
+            resultsDiv.innerHTML = html;
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Check for query parameter on load
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryParam = urlParams.get('q');
+        if (queryParam) {
+            queryInput.value = queryParam;
+            performSearch(queryParam, kSelect.value);
+        }
+    </script>
+</body>
+</html>
